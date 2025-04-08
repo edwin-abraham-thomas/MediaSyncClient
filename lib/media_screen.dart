@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'media_controller.dart';
 
 class MediaScreen extends StatelessWidget {
+  const MediaScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final mediaController = Provider.of<MediaController>(context);
@@ -22,6 +24,11 @@ class MediaScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
+                  icon: Icon(Icons.skip_previous, size: 40),
+                  onPressed: mediaController.previousTrack,
+                ),
+                SizedBox(width: 20),
+                IconButton(
                   icon: Icon(
                     mediaController.isPlaying ? Icons.pause : Icons.play_arrow,
                     size: 40,
@@ -33,6 +40,16 @@ class MediaScreen extends StatelessWidget {
                       mediaController.play();
                     }
                   },
+                ),
+                SizedBox(width: 20),
+                IconButton(
+                  icon: Icon(Icons.skip_next, size: 40),
+                  onPressed: mediaController.nextTrack,
+                ),
+                SizedBox(width: 20),
+                IconButton(
+                  icon: Icon(Icons.stop, size: 40),
+                  onPressed: mediaController.stop,
                 ),
               ],
             ),
