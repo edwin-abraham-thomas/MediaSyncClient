@@ -1,11 +1,30 @@
 #include "flutter_window.h"
 
 #include <optional>
-#include <windows.h>
+#include <windows.h>  // For Windows API functions
+#include <mmsystem.h>  // For multimedia commands
+#include <string>
+#include <memory>
+#include <wrl.h>  // Windows Runtime Library
+#include <wrl/client.h>  // For ComPtr
+#include <windows.media.control.h>  // For SMTC
+#include <winrt/Windows.Media.Control.h>  // Modern Windows Runtime
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 
 #include "flutter/generated_plugin_registrant.h"
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
+#include <flutter/binary_messenger.h>
+#include <flutter/encodable_value.h>
+#include <flutter/standard_message_codec.h>
+
+// Link the winmm.lib library and windows runtime libraries
+#pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "windowsapp.lib")
+#pragma comment(lib, "runtimeobject.lib")
+
+using namespace winrt;
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
 	: project_(project) {
@@ -32,14 +51,14 @@ bool SendMediaKeyCommand(WORD keyCommand) {
 	return result == 2; // Return true if both inputs were processed
 }
 
-// Alternative approach using keybd_event (older API)
-bool SendMediaKeyEventLegacy(BYTE keyCommand) {
-	// Key down
-	keybd_event(keyCommand, 0, 0, 0);
-	// Key up
-	keybd_event(keyCommand, 0, KEYEVENTF_KEYUP, 0);
-	return true;
-}
+//// Alternative approach using keybd_event (older API)
+//bool SendMediaKeyEventLegacy(BYTE keyCommand) {
+//	// Key down
+//	keybd_event(keyCommand, 0, 0, 0);
+//	// Key up
+//	keybd_event(keyCommand, 0, KEYEVENTF_KEYUP, 0);
+//	return true;
+//}
 
 // Function to control media using Windows API
 bool ControlMedia(const std::string& command) {
@@ -69,6 +88,87 @@ bool ControlMedia(const std::string& command) {
 	}
 
 	return false;
+}
+
+// Function to get media info using Windows Runtime APIs
+flutter::EncodableMap GetMediaInfo() {
+	flutter::EncodableMap mediaInfo;
+	mediaInfo[flutter::EncodableValue("title")] = flutter::EncodableValue("Unknown");
+	mediaInfo[flutter::EncodableValue("artist")] = flutter::EncodableValue("Unknown");
+	mediaInfo[flutter::EncodableValue("album")] = flutter::EncodableValue("Unknown");
+	mediaInfo[flutter::EncodableValue("isPlaying")] = flutter::EncodableValue(false);
+
+	try {
+
+		// Initialize an MTA for this thread
+		winrt::init_apartment(winrt::apartment_type::multi_threaded);
+
+		// Perform the blocking wait on the background thread
+		auto sessionManager = winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+		auto currentSession = sessionManager.GetCurrentSession();
+
+		// Extract media information (example implementation)
+		if (currentSession) {
+			auto mediaProperties = currentSession.TryGetMediaPropertiesAsync().get();
+			mediaInfo[flutter::EncodableValue("title")] =
+				flutter::EncodableValue(winrt::to_string(mediaProperties.Title()));
+			mediaInfo[flutter::EncodableValue("artist")] =
+				flutter::EncodableValue(winrt::to_string(mediaProperties.Artist()));
+			mediaInfo[flutter::EncodableValue("album")] =
+				flutter::EncodableValue(winrt::to_string(mediaProperties.AlbumTitle()));
+			auto playbackInfo = currentSession.GetPlaybackInfo();
+			mediaInfo[flutter::EncodableValue("isPlaying")] =
+				flutter::EncodableValue(playbackInfo &&
+					playbackInfo.PlaybackStatus() ==
+					winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing);
+		}
+		else {
+			mediaInfo[flutter::EncodableValue("title")] = flutter::EncodableValue("No media playing");
+			mediaInfo[flutter::EncodableValue("artist")] = flutter::EncodableValue("Unknown");
+			mediaInfo[flutter::EncodableValue("album")] = flutter::EncodableValue("Unknown");
+			mediaInfo[flutter::EncodableValue("isPlaying")] = flutter::EncodableValue(false);
+		}
+	}
+	catch (const winrt::hresult_error& ex) {
+		// Handle Windows Runtime errors
+		std::string errorMessage = "WinRT Error: ";
+		errorMessage += winrt::to_string(ex.message());
+		errorMessage += " (Code: 0x" + std::to_string(static_cast<unsigned long>(ex.code())) + ")";
+		OutputDebugStringA(errorMessage.c_str());
+
+		mediaInfo[flutter::EncodableValue("error")] = flutter::EncodableValue(errorMessage);
+
+		// Try alternative approach if we can't use WinRT successfully
+		// This could involve other Windows APIs like using GetWindowText on media player windows
+		try {
+			OutputDebugStringA("Attempting fallback method for getting media info...");
+			// Fallback implementation could be added here
+		}
+		catch (...) {
+			OutputDebugStringA("Fallback method also failed");
+		}
+	}
+	catch (const std::exception& e) {
+		// Handle standard exceptions
+		OutputDebugStringA("Exception when getting media info: ");
+		OutputDebugStringA(e.what());
+
+		// Only add error info if fallback approach didn't work
+		if (std::get<std::string>(mediaInfo[flutter::EncodableValue("title")]) == "Unknown") {
+			mediaInfo[flutter::EncodableValue("error")] = flutter::EncodableValue(e.what());
+		}
+	}
+	catch (...) {
+		// Handle unknown exceptions
+		OutputDebugStringA("Unknown exception when getting media info");
+
+		// Only add error info if fallback approach didn't work
+		if (std::get<std::string>(mediaInfo[flutter::EncodableValue("title")]) == "Unknown") {
+			mediaInfo[flutter::EncodableValue("error")] = flutter::EncodableValue("Unknown error while retrieving media information");
+		}
+	}
+
+	return mediaInfo;
 }
 
 bool FlutterWindow::OnCreate() {
@@ -153,6 +253,27 @@ bool FlutterWindow::OnCreate() {
 						std::string response = "Failed to send media stop command";
 						result->Error("ERROR", response);
 					}
+				}
+				else {
+					result->NotImplemented();
+				}
+		});
+
+	// Media info channel
+	flutter::MethodChannel<> mediaInfoChannel(
+		flutter_controller_->engine()->messenger(), "media/info",
+		&flutter::StandardMethodCodec::GetInstance());
+
+	mediaInfoChannel.SetMethodCallHandler(
+		[](const flutter::MethodCall<>& call,
+			std::unique_ptr<flutter::MethodResult<>> result) {
+				if (call.method_name() == "getCurrentMedia") {
+					// Get current media info
+					std::thread([result = std::move(result)]() mutable {
+						// Call the function to get media info
+						flutter::EncodableMap mediaInfo = GetMediaInfo();
+						result->Success(mediaInfo);
+						}).detach();
 				}
 				else {
 					result->NotImplemented();

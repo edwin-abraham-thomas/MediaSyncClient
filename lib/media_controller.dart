@@ -1,15 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
 class MediaController with ChangeNotifier {
-  static const platform = MethodChannel('media/control');
+  static const controlChannel = MethodChannel('media/control');
+  static const infoChannel = MethodChannel('media/info');
 
-  String currentMedia = "Sample Song"; // Mock media for POC
+  String currentMedia = "Unknown"; // Will be updated with real media info
+  String currentArtist = "Unknown";
+  String currentAlbum = "Unknown";
   bool isPlaying = false;
+
+  MediaController() {
+    // Initialize by fetching media info
+    fetchMediaState();
+
+    // Set up periodic refresh (every 2 seconds)
+    Timer.periodic(Duration(seconds: 2), (timer) {
+      fetchMediaState();
+    });
+  }
 
   Future<void> play() async {
     try {
-      String result = await platform.invokeMethod('play');
+      String result = await controlChannel.invokeMethod('play');
       isPlaying = true;
       print("Play result: $result");
       notifyListeners();
@@ -20,7 +35,7 @@ class MediaController with ChangeNotifier {
 
   Future<void> pause() async {
     try {
-      String result = await platform.invokeMethod('pause');
+      String result = await controlChannel.invokeMethod('pause');
       isPlaying = false;
       print("Pause result: $result");
       notifyListeners();
@@ -31,7 +46,7 @@ class MediaController with ChangeNotifier {
 
   Future<void> nextTrack() async {
     try {
-      String result = await platform.invokeMethod('next');
+      String result = await controlChannel.invokeMethod('next');
       print("Next track result: $result");
       // Update UI or state if needed
       notifyListeners();
@@ -42,7 +57,7 @@ class MediaController with ChangeNotifier {
 
   Future<void> previousTrack() async {
     try {
-      String result = await platform.invokeMethod('previous');
+      String result = await controlChannel.invokeMethod('previous');
       print("Previous track result: $result");
       // Update UI or state if needed
       notifyListeners();
@@ -53,7 +68,7 @@ class MediaController with ChangeNotifier {
 
   Future<void> stop() async {
     try {
-      String result = await platform.invokeMethod('stop');
+      String result = await controlChannel.invokeMethod('stop');
       isPlaying = false;
       print("Stop result: $result");
       notifyListeners();
@@ -63,8 +78,25 @@ class MediaController with ChangeNotifier {
   }
 
   // Simulate fetching current media state (for POC)
-  void fetchMediaState() {
-    // In a real app, this would query the native platform
-    notifyListeners();
+  Future<void> fetchMediaState() async {
+    try {
+      final Map<dynamic, dynamic> result = await infoChannel.invokeMethod(
+        'getCurrentMedia',
+      );
+
+      // Update properties
+      currentMedia = result['title'] ?? 'Unknown';
+      currentArtist = result['artist'] ?? 'Unknown';
+      currentAlbum = result['album'] ?? 'Unknown';
+      isPlaying = result['isPlaying'] ?? false;
+
+      // Notify listeners to update UI
+      notifyListeners();
+
+      return;
+    } on PlatformException catch (e) {
+      print("Failed to get media info: '${e.message}'.");
+      return;
+    }
   }
 }
