@@ -7,8 +7,8 @@ plugins {
 
 android {
     namespace = "com.example.media_sync_client"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 35
+    ndkVersion = "26.3.11579264"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -37,6 +37,9 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+dependencies {
+    implementation("androidx.media:media:1.7.0")
 }
 
 flutter {
