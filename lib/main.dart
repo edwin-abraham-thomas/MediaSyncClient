@@ -13,12 +13,15 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Media Control POC',
       theme: ThemeData(primarySwatch: Colors.blue),
       home: MediaScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }

@@ -10,7 +10,7 @@ class MediaScreen extends StatelessWidget {
     final mediaController = Provider.of<MediaController>(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Local Media Control')),
+      appBar: AppBar(title: Text('Media Control Center')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
